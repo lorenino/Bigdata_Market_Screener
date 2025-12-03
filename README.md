@@ -14,7 +14,7 @@ J'ai opté pour une stack 100% Python, open-source et scalable.
 *   **Scalabilité** : Mon script Python est conçu pour passer de 50 à 5000 actifs sans changer une ligne de code, en se connectant potentiellement à des clusters de calcul (Spark).
 
 ### Le Pipeline de Données (ETL)
-1.  **Extract (Source)** : API `yfinance` (Yahoo Finance). Données brutes de marché (Open, High, Low, Close, Volume).
+1.  **Extract (Source)** : Connexion directe à l'API `yfinance` (Yahoo Finance) en **Temps Réel**. Plus de fichiers CSV statiques.
 2.  **Transform (Python/Pandas)** :
     *   Nettoyage des données (valeurs manquantes, jours fériés).
     *   **Feature Engineering** : Calcul vectorisé des indicateurs techniques (SMA 50/200, Volatilité Annualisée, Rendements Logarithmiques).
