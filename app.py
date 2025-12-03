@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+import yfinance as yf
 
 # --- 1. CONFIGURATION DE LA PAGE ---
 st.set_page_config(
@@ -11,33 +12,80 @@ st.set_page_config(
 )
 
 # Titre Principal
-st.title("📊 Dashboard Financier & Big Data")
+st.title("📊 Dashboard Financier & Big Data (Temps Réel)")
 st.markdown("""
 *Ce tableau de bord analyse la performance, la volatilité et les corrélations d'actifs financiers 
-en utilisant une architecture Python 'Full Code' pour traiter les données volumineuses.*
+en utilisant une architecture Python 'Full Code' pour traiter les données volumineuses en **Temps Réel**.*
 """)
 st.markdown("---")
 
-# --- 2. CHARGEMENT DES DONNÉES (ETL) ---
-@st.cache_data # Optimisation : garde les données en mémoire (cache)
-def load_data():
-    try:
-        # On charge le CSV généré par le script de récupération
-        df = pd.read_csv('market_data_bigdata.csv')
-        df['Date'] = pd.to_datetime(df['Date'])
-        return df
-    except FileNotFoundError:
+# --- 2. CHARGEMENT DES DONNÉES (ETL TEMPS RÉEL) ---
+@st.cache_data(ttl=3600) # Cache les données pour 1 heure pour éviter de spammer l'API
+def load_data_realtime():
+    tickers_list = [
+        'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'NFLX', # Tech
+        'LVMH.PA', 'OR.PA', 'TTE.PA', 'BNP.PA', 'AIR.PA', # CAC 40 (France)
+        'BTC-USD', 'ETH-USD', 'SOL-USD', 'XRP-USD', # Crypto
+        'JPM', 'V', 'JNJ', 'WMT', 'PG' # Finance & Retail US
+    ]
+    
+    appended_data = []
+    
+    # Barre de progression pour le chargement
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    for i, symbol in enumerate(tickers_list):
+        status_text.text(f"Chargement des données pour {symbol}...")
+        try:
+            # Téléchargement (5 ans d'historique)
+            df = yf.download(symbol, period="5y", interval="1d", progress=False)
+            
+            if len(df) > 0:
+                # Nettoyage des MultiIndex
+                df.columns = df.columns.droplevel(1) if isinstance(df.columns, pd.MultiIndex) else df.columns
+                
+                # Feature Engineering
+                df['SMA_50'] = df['Close'].rolling(window=50).mean()
+                df['SMA_200'] = df['Close'].rolling(window=200).mean()
+                df['Daily_Return'] = df['Close'].pct_change()
+                # Volatilité Annualisée
+                df['Volatilite'] = df['Daily_Return'].rolling(window=20).std() * (252 ** 0.5)
+                
+                df['Ticker'] = symbol
+                df.reset_index(inplace=True)
+                
+                appended_data.append(df)
+        except Exception as e:
+            st.error(f"Erreur sur {symbol}: {e}")
+        
+        # Mise à jour de la barre de progression
+        progress_bar.progress((i + 1) / len(tickers_list))
+            
+    status_text.empty()
+    progress_bar.empty()
+    
+    if appended_data:
+        final_df = pd.concat(appended_data)
+        final_df.dropna(inplace=True)
+        return final_df
+    else:
         return None
 
-df = load_data()
+with st.spinner('Récupération des données de marché en direct...'):
+    df = load_data_realtime()
 
 if df is None:
-    st.error("⚠️ ERREUR : Le fichier 'market_data_bigdata.csv' est introuvable.")
-    st.info("Veuillez lancer le script de récupération des données (step 1) avant de lancer l'application.")
+    st.error("⚠️ Impossible de récupérer les données en temps réel.")
     st.stop()
 
 # --- 3. BARRE LATÉRALE (Filtres Interactifs) ---
 st.sidebar.header("Paramètres d'Analyse")
+
+# Bouton de rafraîchissement
+if st.sidebar.button('🔄 Rafraîchir les Données'):
+    st.cache_data.clear()
+    st.rerun()
 
 # Liste complète des tickers
 liste_tickers = df['Ticker'].unique()
@@ -168,7 +216,7 @@ col_matrix, col_corr = st.columns([1.5, 1]) # La matrice prend plus de place
 
 with col_matrix:
     st.subheader("🔮 Matrice Risque / Rendement")
-    st.markdown("Objectif : Identifier les actifs à **Fort Rendement** et **Faible Risque** (Haut-Gauche).")
+    st.markdown("Objectif : Identifier les actifs présentant le meilleur ratio rendement/risque (Haut-Gauche) et ceux à éviter (Bas-Droite).")
     
     if not df_summary.empty:
         fig_bubble = px.scatter(
